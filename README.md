@@ -4,6 +4,8 @@ A web-based application for AI-powered medical image segmentation using the SuPr
 
 **Developed for Johns Hopkins CCVL Lab - Project II Application**
 
+![alt text](static/images/home.png)
+
 ## 🚀 Features
 
 - **Easy Upload**: Drag & drop interface for .nii.gz CT scan files

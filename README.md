@@ -6,6 +6,10 @@ A web-based application for AI-powered medical image segmentation using the SuPr
 
 ![alt text](static/images/home.png)
 
+![alt text](static/images/result.png)
+
+![alt text](static/images/seg.png)
+
 ## 🚀 Features
 
 - **Easy Upload**: Drag & drop interface for .nii.gz CT scan files

@@ -124,11 +124,21 @@
                         <!-- Status -->
                         <div class="status-card" id="statusCard">
                             <div class="alert" id="statusAlert">
-                                <div class="d-flex align-items-center">
-                                    <div class="spinner-border spinner-border-sm me-2" id="statusSpinner"></div>
-                                    <div>
-                                        <strong id="statusTitle">Processing...</strong>
-                                        <div id="statusMessage" class="small"></div>
+                                <div class="d-flex align-items-center justify-content-between">
+                                    <div class="d-flex align-items-center">
+                                        <div class="spinner-border spinner-border-sm me-2" id="statusSpinner"></div>
+                                        <div>
+                                            <strong id="statusTitle">Processing...</strong>
+                                            <div id="statusMessage" class="small"></div>
+                                        </div>
+                                    </div>
+                                    <button id="logsButton" class="btn btn-sm btn-outline-info" onclick="toggleLogs()" style="display: none;">
+                                        <i class="fas fa-terminal"></i> Logs
+                                    </button>
+                                </div>
+                                <div id="logsContainer" style="display: none; margin-top: 15px;">
+                                    <h6>Processing Logs:</h6>
+                                    <div id="logsContent" style="background: #f8f9fa; padding: 10px; border-radius: 5px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.8em; white-space: pre-wrap;">
                                     </div>
                                 </div>
                             </div>
@@ -266,7 +276,19 @@
         function startStatusChecking() {
             if (!currentCaseName) return;
 
+            let checkCount = 0;
+            const maxChecks = 1200; // 1 hour max (1200 * 3 seconds = 3600 seconds)
+
             statusCheckInterval = setInterval(() => {
+                checkCount++;
+                
+                // Timeout after 1 hour
+                if (checkCount >= maxChecks) {
+                    clearInterval(statusCheckInterval);
+                    showAlert('error', 'Processing Timeout', 'Processing took too long and was stopped. Please try again with a smaller file.');
+                    return;
+                }
+
                 fetch(`/status/${currentCaseName}`)
                 .then(response => response.json())
                 .then(data => {
@@ -286,13 +308,60 @@
                         clearInterval(statusCheckInterval);
                         showAlert('error', 'Processing Failed', data.message);
                     } else if (data.status === 'running') {
-                        showAlert('info', 'Processing...', data.message);
+                        showAlert('info', 'Processing...', `${data.message} (${Math.floor(checkCount * 3 / 60)} min elapsed)`);
+                        
+                        // Show logs button
+                        document.getElementById('logsButton').style.display = 'block';
+                        
+                        // Show logs if available
+                        if (data.logs && data.logs.length > 0) {
+                            const latestLog = data.logs[data.logs.length - 1];
+                            if (latestLog && latestLog.trim()) {
+                                const statusMessage = document.getElementById('statusMessage');
+                                statusMessage.innerHTML = `${data.message} (${Math.floor(checkCount * 3 / 60)} min elapsed)<br>
+                                    <small class="text-muted">Latest: ${latestLog}</small>`;
+                            }
+                        }
                     }
                 })
                 .catch(error => {
                     console.error('Status check error:', error);
                 });
             }, 3000); // Check every 3 seconds
+        }
+
+        function toggleLogs() {
+            const logsContainer = document.getElementById('logsContainer');
+            const logsButton = document.getElementById('logsButton');
+            
+            if (logsContainer.style.display === 'none') {
+                logsContainer.style.display = 'block';
+                logsButton.innerHTML = '<i class="fas fa-eye-slash"></i> Hide Logs';
+                loadLogs();
+            } else {
+                logsContainer.style.display = 'none';
+                logsButton.innerHTML = '<i class="fas fa-terminal"></i> Logs';
+            }
+        }
+
+        function loadLogs() {
+            if (!currentCaseName) return;
+            
+            fetch(`/logs/${currentCaseName}`)
+            .then(response => response.json())
+            .then(data => {
+                const logsContent = document.getElementById('logsContent');
+                if (data.logs && data.logs.length > 0) {
+                    logsContent.textContent = data.logs.join('\n');
+                    logsContent.scrollTop = logsContent.scrollHeight; // Auto-scroll to bottom
+                } else {
+                    logsContent.textContent = 'No logs available yet...';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading logs:', error);
+                document.getElementById('logsContent').textContent = 'Error loading logs';
+            });
         }
     </script>
 </body>

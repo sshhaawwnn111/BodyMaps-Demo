@@ -36,6 +36,39 @@ check_python() {
     if command -v python3 &> /dev/null; then
         PYTHON_VERSION=$(python3 --version | cut -d' ' -f2)
         print_success "Python 3 found: $PYTHON_VERSION"
+        
+        # Check if python3-venv is available (required on Ubuntu/Debian)
+        if ! python3 -m venv --help &> /dev/null; then
+            print_warning "python3-venv module not found"
+            
+            # Check if we're on Ubuntu/Debian
+            if command -v apt &> /dev/null; then
+                print_status "Installing required Python packages..."
+                if sudo apt update && sudo apt install -y python3-venv python3-dev python3-pip build-essential; then
+                    print_success "Required Python packages installed successfully"
+                else
+                    print_error "Failed to install required packages"
+                    echo "Please run: sudo apt install python3-venv python3-dev python3-pip build-essential"
+                    exit 1
+                fi
+            else
+                print_error "python3-venv is required but not available."
+                echo "Please install the python3-venv package for your system."
+                exit 1
+            fi
+        else
+            # Even if venv is available, check for development headers on Ubuntu/Debian
+            if command -v apt &> /dev/null; then
+                if ! dpkg -l | grep -q python3-dev; then
+                    print_status "Installing Python development headers..."
+                    if sudo apt update && sudo apt install -y python3-dev build-essential; then
+                        print_success "Python development headers installed"
+                    else
+                        print_warning "Could not install development headers - some packages may fail to build"
+                    fi
+                fi
+            fi
+        fi
     else
         print_error "Python 3 is required but not installed."
         echo "Please install Python 3.8+ and try again."
@@ -78,9 +111,9 @@ setup_venv() {
     # Activate virtual environment
     source venv/bin/activate
     
-    # Upgrade pip
-    print_status "Upgrading pip..."
-    pip install --upgrade pip
+    # Upgrade pip and install essential build tools
+    print_status "Upgrading pip and installing build tools..."
+    pip install --upgrade pip setuptools wheel
     
     print_success "Virtual environment created and activated"
 }
@@ -92,7 +125,31 @@ install_dependencies() {
     # Make sure we're in the virtual environment
     source venv/bin/activate
     
-    pip install -r requirements.txt
+    # Check Python version and adjust numpy version for compatibility
+    PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1-2)
+    
+    if [[ "$PYTHON_VERSION" == "3.12" ]]; then
+        print_warning "Python 3.12 detected - using compatible package versions"
+        
+        # Create a temporary requirements file with compatible versions
+        cat > requirements_temp.txt << 'EOF'
+Flask>=2.3.3
+Werkzeug>=2.3.7
+nibabel>=5.1.0
+matplotlib>=3.7.2
+numpy>=1.26.0
+Pillow>=10.0.1
+EOF
+        
+        # Install from the temporary requirements file
+        pip install -r requirements_temp.txt
+        
+        # Clean up temporary file
+        rm requirements_temp.txt
+    else
+        # Use original requirements for older Python versions
+        pip install -r requirements.txt
+    fi
     
     print_success "Python dependencies installed"
 }
@@ -133,8 +190,19 @@ download_suprem() {
 check_resources() {
     print_status "Checking system resources..."
     
-    # Check available memory (on macOS)
-    if command -v sysctl &> /dev/null; then
+    # Check available memory (cross-platform)
+    if [ -f /proc/meminfo ]; then
+        # Linux
+        TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+        TOTAL_MEM_GB=$((TOTAL_MEM_KB / 1024 / 1024))
+        
+        if [ $TOTAL_MEM_GB -lt 8 ]; then
+            print_warning "System has ${TOTAL_MEM_GB}GB RAM. 8GB+ recommended for optimal performance."
+        else
+            print_success "System has ${TOTAL_MEM_GB}GB RAM"
+        fi
+    elif command -v sysctl &> /dev/null && sysctl -n hw.memsize &> /dev/null; then
+        # macOS
         TOTAL_MEM=$(sysctl -n hw.memsize)
         TOTAL_MEM_GB=$((TOTAL_MEM / 1024 / 1024 / 1024))
         
@@ -143,6 +211,8 @@ check_resources() {
         else
             print_success "System has ${TOTAL_MEM_GB}GB RAM"
         fi
+    else
+        print_warning "Could not determine system memory"
     fi
     
     # Check for GPU (NVIDIA)

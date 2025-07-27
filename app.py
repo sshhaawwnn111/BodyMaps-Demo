@@ -2,7 +2,7 @@ import os
 import shutil
 import subprocess
 import threading
-from flask import Flask, request, render_template, jsonify, send_file, redirect, url_for
+from flask import Flask, request, render_template, jsonify, send_file, redirect, url_for, after_this_request
 from werkzeug.utils import secure_filename
 import time
 import glob
@@ -88,7 +88,6 @@ def run_suprem_docker(case_name):
             'qchen99/suprem:v1',
             '/bin/bash', '-c', 'sh predict.sh'
         ])
-        
         print(f"Running Docker command: {' '.join(docker_cmd)}")
         processing_status[case_name]['logs'].append(f"Command: {' '.join(docker_cmd)}")
         
@@ -303,6 +302,14 @@ def download_results(case_name):
         zip_path = f'/tmp/{case_name}_results.zip'
         shutil.make_archive(zip_path.replace('.zip', ''), 'zip', output_dir)
         
+        @after_this_request
+        def remove_file(response):
+            try:
+                os.remove(zip_path)
+            except Exception as e:
+                print(f"Error deleting zip file: {e}")
+            return response
+
         return send_file(zip_path, as_attachment=True, download_name=f'{case_name}_results.zip')
         
     except Exception as e:

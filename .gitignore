@@ -1,4 +1,6 @@
 /inputs_data/*
 /outputs_data/*
 /static/results/*
-/venv
+.venv/
+.vscode/
+models/

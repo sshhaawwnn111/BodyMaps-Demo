@@ -15,7 +15,7 @@ from nnInteractive.inference.inference_session import nnInteractiveInferenceSess
 REPO_ID = "nnInteractive/nnInteractive"
 MODEL_NAME = "nnInteractive_v1.0"  # Updated models may be available in the future
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "models")  # Download to ./models
-POINT_COORDINATES = (350, 174, 35)    # Example: (x, y, z) for a positive point
+POINT_COORDINATES = (367, 184, 35)    # Example: (x, y, z) for a positive point
 TEST_IMAGE = "inputs_data/casename00001/ct.nii.gz"          # Path to your test image
 
 session = nnInteractiveInferenceSession(
@@ -70,9 +70,8 @@ result = session.target_buffer.cpu().numpy()
 result = np.transpose(result, (2, 1, 0))  # (z, y, x)
 result_img = sitk.GetImageFromArray(result)
 result_img.CopyInformation(input_image)
-sitk.WriteImage(result_img, "segmentation_result.nii.gz")
+# sitk.WriteImage(result_img, "segmentation_result.nii.gz")
 
-print("Segmentation complete. Result saved as segmentation_result.nii.gz")
 
 # --- Visualization ---
 # Show the middle slice in z-dimension

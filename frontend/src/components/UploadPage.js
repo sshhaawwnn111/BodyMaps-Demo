@@ -29,7 +29,7 @@ const UploadPage = () => {
     if (processing && currentCaseName) {
       interval = setInterval(() => {
         checkStatus(currentCaseName);
-      }, 2000);
+      }, 5000);
     }
     return () => {
       if (interval) clearInterval(interval);

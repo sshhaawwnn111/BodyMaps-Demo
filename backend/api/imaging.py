@@ -89,13 +89,14 @@ def get_nn_session(case_name):
         if case_name in nn_sessions:
             return nn_sessions[case_name]
         
+        # Match test.py configuration exactly for best results
         session = nnInteractiveInferenceSession(
             device=torch.device("cuda:0" if torch.cuda.is_available() else "cpu"),
-            use_torch_compile=False,
+            use_torch_compile=False,  # Experimental: Not tested yet
             verbose=False,
-            torch_n_threads=os.cpu_count(),
-            do_autozoom=True,
-            use_pinned_memory=True,
+            torch_n_threads=os.cpu_count(),  # Use available CPU cores
+            do_autozoom=True,  # Enables AutoZoom for better patching - IMPORTANT for quality
+            use_pinned_memory=True,  # Optimizes GPU memory transfers
         )
         session.initialize_from_trained_model_folder(model_dir)
         
@@ -106,8 +107,8 @@ def get_nn_session(case_name):
         img = img[None]                           # (1, x, y, z)
         session.set_image(img)
         
-        # Set target buffer
-        target_tensor = torch.zeros(img.shape[1:], dtype=torch.uint8)
+        # Set target buffer - must be 3D (x, y, z) with uint8 dtype (matching test.py)
+        target_tensor = torch.zeros(img.shape[1:], dtype=torch.uint8)  # Must be 3D (x, y, z)
         session.set_target_buffer(target_tensor)
         
         # Store additional info
@@ -156,115 +157,81 @@ def get_case_image_info(case_name):
 
 @imaging_bp.route('/slice_with_overlay/<case_name>/<int:slice_idx>')
 def get_slice_with_overlay(case_name, slice_idx):
-    """Get CT slice with current segmentation overlay"""
+    """Get CT slice with current segmentation overlay - simplified like test.py"""
     from app import app
     
     try:
-        print(f"DEBUG: slice_with_overlay called for {case_name}, slice {slice_idx}")
-        
-        # Get original slice
+        # Load input image (same as test.py)
         ct_path = os.path.join(app.config['UPLOAD_FOLDER'], case_name, 'ct.nii.gz')
         if not os.path.exists(ct_path):
-            print(f"DEBUG: CT file not found: {ct_path}")
             return jsonify({'error': 'Original CT not found'}), 404
             
-        if nib is None:
-            print("DEBUG: nibabel not available")
-            return jsonify({'error': 'nibabel not installed on server'}), 500
-            
-        print("DEBUG: Loading image with nibabel")
-        img = nib.load(ct_path)
-        data = img.get_fdata()
-        print(f"DEBUG: Image loaded, shape: {data.shape}")
+        if not INTERACTIVE_AVAILABLE:
+            # Fallback to original slice if no interactive segmentation
+            return get_original_slice(case_name, slice_idx)
+        
+        # Load image using SimpleITK (same as test.py)
+        input_image = sitk.ReadImage(ct_path)
+        input_np = sitk.GetArrayFromImage(input_image)  # shape: (z, y, x)
         
         # Validate slice index
-        if slice_idx < 0 or slice_idx >= data.shape[2]:
-            slice_idx = data.shape[2] // 2
-            print(f"DEBUG: Adjusted slice index to: {slice_idx}")
-            
-        slice_img = data[:, :, slice_idx]
-        print(f"DEBUG: Extracted slice, shape: {slice_img.shape}")
+        if slice_idx < 0 or slice_idx >= input_np.shape[0]:
+            slice_idx = input_np.shape[0] // 2
         
-        # Check if we have an active session with segmentation
-        overlay_mask = None
+        # Get segmentation data if session exists
+        seg_np = None
         interaction_points = []
         
-        print("DEBUG: Checking for active sessions")
-        try:
-            with nn_sessions_lock:
-                if case_name in nn_sessions and INTERACTIVE_AVAILABLE:
-                    print("DEBUG: Found active session, getting segmentation")
-                    session = nn_sessions[case_name]
-                    # Get segmentation for this slice
-                    seg_np = session.target_buffer.cpu().numpy()  # (x, y, z)
-                    seg_np = np.transpose(seg_np, (2, 1, 0))     # (z, y, x)
-                    if slice_idx < seg_np.shape[0]:
-                        overlay_mask = seg_np[slice_idx]  # (y, x)
-                        print(f"DEBUG: Got overlay mask, shape: {overlay_mask.shape}")
-                    
-                    # Get interaction points for this slice
-                    interaction_points = [
-                        {'x': p[0], 'y': p[1], 'positive': p[3]} 
-                        for p in getattr(session, 'interaction_points', []) 
-                        if p[2] == slice_idx
-                    ]
-                    print(f"DEBUG: Got {len(interaction_points)} interaction points")
-                else:
-                    print("DEBUG: No active session found")
-        except Exception as e:
-            print(f"DEBUG: Error getting segmentation overlay: {e}")
-            # Continue without overlay
-            interaction_points = []
+        with nn_sessions_lock:
+            if case_name in nn_sessions:
+                session = nn_sessions[case_name]
+                # Get segmentation result (same as test.py)
+                result = session.target_buffer.cpu().numpy()  # (x, y, z)
+                seg_np = np.transpose(result, (2, 1, 0))  # (z, y, x) - same as test.py
+                
+                # Get interaction points for this slice
+                interaction_points = [
+                    p for p in getattr(session, 'interaction_points', []) 
+                    if p[2] == slice_idx
+                ]
         
-        print("DEBUG: Normalizing image")
-        # Normalize image to 0-255
-        slice_img = np.nan_to_num(slice_img)
-        vmin, vmax = np.percentile(slice_img, [1, 99])
-        slice_img = np.clip((slice_img - vmin) / (vmax - vmin + 1e-5), 0, 1)
+        # Create visualization with exact pixel dimensions to match frontend
+        slice_data = input_np[slice_idx]  # (y, x) = (348, 502)
+        height, width = slice_data.shape
         
-        # Create RGB image
-        img_rgb = np.stack([slice_img] * 3, axis=-1)
-        print(f"DEBUG: Created RGB image, shape: {img_rgb.shape}")
+        # Create figure with exact pixel dimensions (DPI=100 means figsize in inches = pixels/100)
+        plt.figure(figsize=(width/100, height/100), dpi=100)
+        plt.imshow(slice_data, cmap='gray')
         
-        # Apply overlay if available
-        if overlay_mask is not None:
-            print("DEBUG: Applying segmentation overlay")
-            print(f"DEBUG: slice_img shape: {slice_img.shape}, overlay_mask shape: {overlay_mask.shape}")
-            
-            # Ensure overlay mask matches slice dimensions
-            if overlay_mask.shape != slice_img.shape:
-                print(f"DEBUG: Reshaping overlay mask from {overlay_mask.shape} to {slice_img.shape}")
-                # The segmentation might be transposed relative to the image
-                if overlay_mask.shape == (slice_img.shape[1], slice_img.shape[0]):
-                    overlay_mask = overlay_mask.T
-                else:
-                    print("DEBUG: Cannot match overlay dimensions, skipping overlay")
-                    overlay_mask = None
-            
-            if overlay_mask is not None:
-                mask = overlay_mask > 0
-                img_rgb[mask, 0] = np.clip(img_rgb[mask, 0] + 0.3, 0, 1)  # Add red
-                img_rgb[mask, 1] = np.clip(img_rgb[mask, 1] * 0.7, 0, 1)  # Reduce green
-                img_rgb[mask, 2] = np.clip(img_rgb[mask, 2] * 0.7, 0, 1)  # Reduce blue
+        # Debug: Print image and figure info
+        print(f"DEBUG: slice_with_overlay - input_np[{slice_idx}] shape: {input_np[slice_idx].shape}")
+        print(f"DEBUG: slice_with_overlay - figure size: {width/100:.2f}x{height/100:.2f} inches at 100 DPI = {width}x{height} pixels")
+        print(f"DEBUG: slice_with_overlay - interaction_points: {interaction_points}")
         
-        # Convert to 8-bit
-        img_rgb = (img_rgb * 255).astype(np.uint8)
-        print("DEBUG: Converted to 8-bit")
+        # Add segmentation overlay if available (same as test.py)
+        if seg_np is not None and seg_np.max() > 0:
+            plt.imshow(seg_np[slice_idx], alpha=0.5, cmap='jet')
         
-        # Create PIL image
-        print("DEBUG: Creating PIL image")
-        im = Image.fromarray(img_rgb)
+        # Add interaction points (same as test.py)
+        for point in interaction_points:
+            x, y, z, positive = point
+            color = 'red' if positive else 'blue'
+            print(f"DEBUG: Drawing point at ({x}, {y}) with color {color}")
+            plt.scatter(x, y, c=color, s=80, marker='x', label='Point')
+        
+        plt.axis('off')
+        plt.tight_layout()
+        
+        # Save to buffer
         buf = BytesIO()
-        im.save(buf, format='PNG')
+        plt.savefig(buf, format='PNG', bbox_inches='tight', pad_inches=0, dpi=100)
+        plt.close()
         buf.seek(0)
-        print(f"DEBUG: Created PNG, size: {len(buf.getvalue())} bytes")
         
         return send_file(buf, mimetype='image/png')
         
     except Exception as e:
-        print(f"DEBUG: Exception in slice_with_overlay: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"Error in slice_with_overlay: {e}")
         return jsonify({'error': f'Failed to get slice: {str(e)}'}), 500
 
 
@@ -281,11 +248,30 @@ def interact_segment():
     z = int(data.get('z'))
     positive = data.get('positive', True)  # True for positive, False for negative
     
+    print(f"DEBUG: Received click at ({x}, {y}, {z}) for case {case_name}")
+    
     try:
         session = get_nn_session(case_name)
         
+        # Debug: Check image dimensions
+        if hasattr(session, 'original_image'):
+            img_array = sitk.GetArrayFromImage(session.original_image)  # (z, y, x)
+            print(f"DEBUG: Original image shape (z,y,x): {img_array.shape}")
+            print(f"DEBUG: Click coordinates relative to slice {z}: ({x}, {y})")
+            print(f"DEBUG: Max coordinates for this slice: x_max={img_array.shape[2]-1}, y_max={img_array.shape[1]-1}")
+        
         # Add interaction point
-        session.add_point_interaction((x, y, z), include_interaction=positive)
+        # Always use include_interaction=True for smoother segmentation (like test.py)
+        # For negative points, we might need to use add_negative_point_interaction if available
+        try:
+            if positive:
+                session.add_point_interaction((x, y, z), include_interaction=True)
+            else:
+                session.add_point_interaction((x, y, z), include_interaction=False)
+        except Exception as e:
+            print(f"DEBUG: Error adding interaction point: {e}")
+            # Fallback to basic interaction
+            session.add_point_interaction((x, y, z), include_interaction=True)
         
         # Store interaction point for visualization
         if not hasattr(session, 'interaction_points'):

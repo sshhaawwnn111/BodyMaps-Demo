@@ -121,10 +121,26 @@ const InteractiveViewer = () => {
       return;
     }
 
+    if (!imageInfo) {
+      showAlert('Image information not loaded yet', 'warning');
+      return;
+    }
+
     setLoading(true);
     const rect = event.target.getBoundingClientRect();
-    const x = Math.floor((event.clientX - rect.left) * (event.target.naturalWidth / rect.width));
-    const y = Math.floor((event.clientY - rect.top) * (event.target.naturalHeight / rect.height));
+    
+    // Use original CT image dimensions instead of displayed image dimensions
+    // imageInfo.shape is [x, y, z] format, so we need [x, y] = [width, height]
+    const originalWidth = imageInfo.shape[0];   // x dimension
+    const originalHeight = imageInfo.shape[1];  // y dimension
+    
+    const x = Math.floor((event.clientX - rect.left) * (originalWidth / rect.width));
+    const y = Math.floor((event.clientY - rect.top) * (originalHeight / rect.height));
+    
+    console.log(`DEBUG Frontend: Click at display (${event.clientX - rect.left}, ${event.clientY - rect.top})`);
+    console.log(`DEBUG Frontend: Display size (${rect.width}, ${rect.height})`);
+    console.log(`DEBUG Frontend: Original CT size (${originalWidth}, ${originalHeight})`);
+    console.log(`DEBUG Frontend: Calculated coordinates (${x}, ${y})`);
 
     try {
       const response = await axios.post('/api/interact_segment', {
@@ -349,6 +365,8 @@ const InteractiveViewer = () => {
                       showAlert('Failed to load CT image. Check console for details.', 'danger');
                     }}
                   />
+                  
+                  
                   {loading && (
                     <div style={{
                       position: 'absolute',

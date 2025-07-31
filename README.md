@@ -16,6 +16,7 @@ A web-based application for AI-powered medical image segmentation using the SuPr
 - **AI Processing**: Automated segmentation using SuPreM AI model in Docker
 - **Real-time Status**: Live updates during processing
 - **Visual Results**: Preview segmented organs with interactive image viewer
+- **Interactive Segmentation**: Real-time organ segmentation with nnInteractive AI
 - **Download Results**: Complete segmentation files in ZIP format
 - **Responsive Design**: Bootstrap-based UI that works on desktop and mobile
 
@@ -24,18 +25,28 @@ A web-based application for AI-powered medical image segmentation using the SuPr
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | **Backend** | Flask (Python) | Web server, file handling, Docker integration |
-| **Frontend** | HTML5 + Bootstrap 5 + JavaScript | User interface and interactions |
+| **Frontend** | React + Bootstrap 5 + JavaScript | Modern SPA user interface |
 | **AI Engine** | SuPreM model via Docker | Medical image segmentation |
 | **Image Processing** | nibabel + matplotlib | NIfTI file handling and visualization |
 | **Storage** | Local filesystem | Temporary file storage |
+
+### 🔄 Frontend Options
+
+This application now supports **two frontend implementations**:
+
+1. **React Frontend** (Recommended) - Modern SPA with React components and interactive segmentation
+2. **HTML Frontend** (Legacy) - Original vanilla HTML/CSS/JavaScript
+
+See [REACT_MIGRATION.md](REACT_MIGRATION.md) for detailed migration information.
 
 ## 📋 Prerequisites
 
 Before running this application, ensure you have:
 
 1. **Python 3.8+** with pip
-2. **Docker** installed and running
-3. **SuPreM Docker image** (qchen99/suprem:v1)
+2. **Node.js 16+** and npm (for React frontend)
+3. **Docker** installed and running
+4. **SuPreM Docker image** (qchen99/suprem:v1)
 
 ### Installing Docker and SuPreM Model
 
@@ -89,43 +100,61 @@ mkdir -p inputs_data outputs_data static/results
 
 ### 5. Run the Application
 
+#### Option A: Separated Frontend/Backend (Recommended)
+
 ```bash
-python app.py
+# One-time setup
+chmod +x setup_separated.sh
+./setup_separated.sh
+
+# Development mode (frontend + backend separately)
+./start_dev.sh
+# Frontend: http://localhost:3000
+# Backend API: http://localhost:5001
+
+# OR Production mode (single server)
+./start_prod.sh
+# Application: http://localhost:5001
 ```
 
-The application will start on `http://localhost:5000`
+#### Option B: Legacy HTML Frontend
+
+```bash
+# Move to backend directory and run legacy version
+cd backend
+python app_legacy.py
+# Application: http://localhost:5000
+```
 
 ## 📁 Project Structure
 
 ```
 BodyMaps-Demo/
 │
-├── app.py                      # Main Flask application
-├── requirements.txt            # Python dependencies
-├── README.md                   # This file
+├── frontend/                   # React frontend
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── UploadPage.js  # Main upload interface
+│   │   │   └── ResultsPage.js # Results display page
+│   │   ├── App.js             # Main React app
+│   │   └── index.js           # React entry point
+│   ├── public/                # Public assets
+│   ├── package.json           # Node.js dependencies
+│   └── build/                 # Production build (generated)
 │
-├── templates/                  # HTML templates
-│   ├── upload.html            # Main upload interface
-│   └── results.html           # Results display page
+├── backend/                    # Flask backend API
+│   ├── app.py                 # Main Flask application
+│   ├── requirements.txt       # Python dependencies
+│   ├── utils/                 # Utility functions
+│   │   └── nii_to_png.py     # NIfTI to PNG conversion
+│   ├── inputs_data/          # Uploaded CT scans
+│   ├── outputs_data/         # SuPreM segmentation results
+│   └── static/               # Static files and results
 │
-├── utils/                      # Utility functions
-│   └── nii_to_png.py          # NIfTI to PNG conversion
-│
-├── static/                     # Static files
-│   └── results/               # Generated preview images
-│       └── casename00001/     # Results for each case
-│
-├── inputs_data/               # Uploaded CT scans
-│   └── casename00001/         # Auto-generated case directories
-│       └── ct.nii.gz         # Uploaded CT scan
-│
-└── outputs_data/              # SuPreM segmentation results
-    └── casename00001/         # Results for each case
-        └── segmentations/     # Segmented organ files
-            ├── liver.nii.gz
-            ├── kidney_left.nii.gz
-            ├── kidney_right.nii.gz
-            └── combined_labels.nii.gz
+├── setup_separated.sh         # Setup script for separated structure
+├── start_dev.sh              # Development mode (both servers)
+├── start_prod.sh             # Production mode (single server)
+└── README.md                 # This file
 ```
 
 ## 📄 License
